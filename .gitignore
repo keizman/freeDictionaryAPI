@@ -1,1 +1,26 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Data files (generated, large)
+data/
+*.db
+
+# Config (contains secrets)
+src/config.ts
+
+# Temp files (source data, not needed after migration)
+tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
