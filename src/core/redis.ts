@@ -31,6 +31,11 @@ export function initRedis(config: RedisConfig): Redis {
 
     redisConfig = config;
     redisClient = new Redis(config.connectionString, {
+        // Enable TCP keepalive to prevent idle disconnections
+        keepAlive: 30000, // Send keepalive every 30 seconds
+        // Connection timeout
+        connectTimeout: 10000, // 10 seconds
+        // Retry strategy
         retryStrategy: (times) => {
             if (times > 3) {
                 console.error('[REDIS] Connection failed after 3 retries');
@@ -39,10 +44,21 @@ export function initRedis(config: RedisConfig): Redis {
             return Math.min(times * 200, 2000);
         },
         maxRetriesPerRequest: 3,
+        // Reconnect on error
+        reconnectOnError: (err) => {
+            const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
+            return targetErrors.some(e => err.message.includes(e));
+        },
+        // Enable offline queue to buffer commands when disconnected
+        enableOfflineQueue: true,
     });
 
     redisClient.on('connect', () => {
         console.log('[REDIS] Connected successfully');
+    });
+
+    redisClient.on('ready', () => {
+        console.log('[REDIS] Ready to accept commands');
     });
 
     redisClient.on('error', (err) => {
@@ -51,6 +67,10 @@ export function initRedis(config: RedisConfig): Redis {
 
     redisClient.on('close', () => {
         console.log('[REDIS] Connection closed');
+    });
+
+    redisClient.on('reconnecting', (delay: number) => {
+        console.log(`[REDIS] Reconnecting in ${delay}ms...`);
     });
 
     return redisClient;
