@@ -22,7 +22,7 @@ const app = express();
 
 // Required when running behind reverse proxies (Nginx/Cloudflare/LB)
 // so rate-limit can read client IP from X-Forwarded-For safely.
-const trustProxy = config.server.trustProxy ?? 1;
+const trustProxy = (config as any)?.server?.trustProxy ?? 1;
 app.set('trust proxy', trustProxy);
 
 // Request-level access log for easier production debugging.
