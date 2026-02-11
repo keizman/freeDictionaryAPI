@@ -7,6 +7,7 @@ import { DictionaryResponse } from '../core/types';
 import { getCached, setCached } from '../core/cache';
 import { registry } from '../providers';
 import { DictionaryProvider } from '../providers/base';
+import { lazyLocalDictManager } from '../providers/lazy-local-dicts';
 
 const router = Router();
 
@@ -96,9 +97,6 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
             return res.json(response);
         }
 
-        // 2. Try providers in priority order
-        const providers = registry.getAvailable();
-
         if (language === 'en') {
             const ecdictHit = await queryProvider('ecdict', word, language);
             const oxfordHit = await queryProvider('oxford_en_mac', word, language);
@@ -135,16 +133,15 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
 
             console.log(`[LOOKUP] fallback provider="google" miss word="${word}" lang="en"`);
         } else {
-            const localProviders = providers.filter(
-                p => p.name !== 'google' && p.supportedLanguages.includes(language)
-            );
-
-            for (const provider of localProviders) {
-                const hit = await queryProvider(provider.name, word, language);
-                if (hit) {
+            const providerName = await lazyLocalDictManager.ensureProviderForLanguage(language);
+            if (providerName) {
+                const localHit = await queryProvider(providerName, word, language);
+                if (localHit) {
+                    // refresh idle timer after a successful local query
+                    lazyLocalDictManager.touch(providerName);
                     const elapsed = Date.now() - startTime;
-                    console.log(`[RESPONSE] word="${word}" source=${hit.response.source} elapsed=${elapsed}ms`);
-                    return res.json(hit.response);
+                    console.log(`[RESPONSE] word="${word}" source=${localHit.response.source} elapsed=${elapsed}ms`);
+                    return res.json(localHit.response);
                 }
             }
 

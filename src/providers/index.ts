@@ -7,3 +7,4 @@ export { DictionaryProvider, ProviderRegistry, registry } from './base';
 export { ECDictProvider, createECDictProvider } from './ecdict';
 export { GoogleProvider, createGoogleProvider } from './google';
 export { SqliteDictProvider, createSqliteDictProvider } from './sqlite-dicts';
+export { lazyLocalDictManager, LazyLocalDictDescriptor } from './lazy-local-dicts';

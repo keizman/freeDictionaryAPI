@@ -9,7 +9,8 @@
     "start:legacy": "node app.js",
     "dev": "ts-node src/app.ts",
     "migrate": "ts-node scripts/migrate.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:lazy-local-dicts": "node tests/testcase/lazy-local-dicts.test.mjs"
   },
   "author": "Suraj Jain",
   "license": "ISC",

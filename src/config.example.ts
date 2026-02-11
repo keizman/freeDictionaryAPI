@@ -37,6 +37,10 @@ export interface Config {
             dbPath: string;
         };
     };
+    localDictLifecycle?: {
+        // Idle release timeout for lazy local dictionaries (non-EN)
+        idleReleaseMs?: number;
+    };
 }
 
 const config: Config = {
@@ -79,6 +83,10 @@ const config: Config = {
             enabled: false,
             dbPath: './data/ruen_mac.sqlite',
         },
+    },
+    localDictLifecycle: {
+        // Default 10 minutes. For local verification you can set 10000 (10s).
+        idleReleaseMs: 600000,
     },
 };
 

@@ -13,7 +13,14 @@ import fs from 'fs';
 import path from 'path';
 import config from './config';
 import { initRedis, closeRedis } from './core/redis';
-import { registry, createECDictProvider, createGoogleProvider, createSqliteDictProvider } from './providers';
+import {
+    registry,
+    createECDictProvider,
+    createGoogleProvider,
+    createSqliteDictProvider,
+    lazyLocalDictManager,
+    LazyLocalDictDescriptor,
+} from './providers';
 import dictionaryRoutes from './routes/dictionary';
 
 // ============================================================================
@@ -26,6 +33,18 @@ const projectRoot = path.resolve(__dirname, '..');
 function resolveDbPath(dbPath: string): string {
     if (!dbPath) return dbPath;
     return path.isAbsolute(dbPath) ? dbPath : path.resolve(projectRoot, dbPath);
+}
+
+function readLocalDictIdleReleaseMs(): number {
+    const defaultMs = 10 * 60 * 1000;
+    const envRaw = process.env.LOCAL_DICT_IDLE_RELEASE_MS;
+    const configRaw = (config as any)?.localDictLifecycle?.idleReleaseMs;
+    const value = Number(envRaw ?? configRaw ?? defaultMs);
+
+    if (!Number.isFinite(value) || value <= 0) {
+        return defaultMs;
+    }
+    return value;
 }
 
 // Required when running behind reverse proxies (Nginx/Cloudflare/LB)
@@ -127,9 +146,11 @@ async function start(): Promise<void> {
         console.error('[STARTUP] Failed to load ECDICT:', err);
     }
 
-    // 2. Optional local SQLite dictionary providers
+    // 2. Local dictionary providers:
+    // - EN dictionaries are loaded at startup.
+    // - Non-EN dictionaries are lazy-loaded on first request.
     type LocalDictName = 'oxford_en_mac' | 'koen_mac' | 'jaen_mac' | 'deen_mac' | 'ruen_mac';
-    const registerLocalDict = (
+    const registerStartupLocalDict = (
         name: LocalDictName,
         displayName: string,
         supportedLanguages: string[],
@@ -159,14 +180,48 @@ async function start(): Promise<void> {
         }
     };
 
-    // EN -> EN enrichment dictionary
-    registerLocalDict('oxford_en_mac', 'Oxford EN-EN Dictionary', ['en'], 95);
+    // EN -> EN enrichment dictionary (startup load)
+    registerStartupLocalDict('oxford_en_mac', 'Oxford EN-EN Dictionary', ['en'], 95);
 
-    // Bi-directional language pair dictionaries
-    registerLocalDict('koen_mac', 'Korean-English Dictionary', ['ko'], 90);
-    registerLocalDict('jaen_mac', 'Japanese-English Dictionary', ['ja'], 90);
-    registerLocalDict('deen_mac', 'German-English Dictionary', ['de'], 90);
-    registerLocalDict('ruen_mac', 'Russian-English Dictionary', ['ru'], 90);
+    // Bi-directional language pair dictionaries (lazy load)
+    const lazyDescriptors: LazyLocalDictDescriptor[] = [];
+    const registerLazyLocalDict = (
+        name: Extract<LocalDictName, 'koen_mac' | 'jaen_mac' | 'deen_mac' | 'ruen_mac'>,
+        displayName: string,
+        supportedLanguages: string[],
+        priority: number
+    ) => {
+        const localDict = config.localDicts?.[name];
+        if (!localDict?.enabled) {
+            console.log(`[STARTUP] Skip ${name}: disabled`);
+            return;
+        }
+
+        const dbPath = resolveDbPath(localDict.dbPath);
+        const exists = fs.existsSync(dbPath);
+        console.log(`[STARTUP] ${name} path: ${dbPath} exists=${exists}`);
+
+        if (!exists) {
+            console.log(`[STARTUP] WARN ${name} lazy loading configured but file is missing`);
+        }
+
+        lazyDescriptors.push({
+            name,
+            displayName,
+            supportedLanguages,
+            dbPath,
+            priority,
+        });
+    };
+
+    registerLazyLocalDict('koen_mac', 'Korean-English Dictionary', ['ko'], 90);
+    registerLazyLocalDict('jaen_mac', 'Japanese-English Dictionary', ['ja'], 90);
+    registerLazyLocalDict('deen_mac', 'German-English Dictionary', ['de'], 90);
+    registerLazyLocalDict('ruen_mac', 'Russian-English Dictionary', ['ru'], 90);
+
+    const lazyIdleReleaseMs = readLocalDictIdleReleaseMs();
+    lazyLocalDictManager.configure(lazyDescriptors, lazyIdleReleaseMs);
+    console.log(`[STARTUP] Lazy local dict idle release: ${lazyIdleReleaseMs}ms`);
 
     // 3. Google Provider (priority: 50 - fallback)
     const googleProvider = createGoogleProvider();
@@ -207,6 +262,7 @@ async function start(): Promise<void> {
 process.on('SIGINT', async () => {
     console.log('\n[SHUTDOWN] Received SIGINT, closing connections...');
     await closeRedis();
+    lazyLocalDictManager.close();
     registry.closeAll();
     process.exit(0);
 });
@@ -214,6 +270,7 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
     console.log('\n[SHUTDOWN] Received SIGTERM, closing connections...');
     await closeRedis();
+    lazyLocalDictManager.close();
     registry.closeAll();
     process.exit(0);
 });

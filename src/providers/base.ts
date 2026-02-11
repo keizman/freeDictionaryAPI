@@ -76,6 +76,20 @@ export class ProviderRegistry {
     }
 
     /**
+     * Unregister a provider by name
+     */
+    unregister(name: string): boolean {
+        const provider = this.providers.get(name);
+        if (!provider) return false;
+
+        provider.close();
+        this.providers.delete(name);
+        this.priorityOrder = this.priorityOrder.filter(p => p.provider.name !== name);
+        console.log(`[REGISTRY] Unregistered provider: ${name}`);
+        return true;
+    }
+
+    /**
      * Get provider by name
      */
     get(name: string): DictionaryProvider | undefined {

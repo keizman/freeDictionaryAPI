@@ -7,6 +7,7 @@
 - ✅ **ECDICT 本地词典** - 340万词条，无需网络即可查询
 - ✅ **Oxford EN-EN 增强** - `en` 查询可用 `oxford_en_mac` 覆盖英英 definitions
 - ✅ **多语双向词典** - 可选 `ko/ja/de/ru <-> en` 本地词库
+- ✅ **非 EN 词典懒加载** - 首次请求时热加载，空闲后自动释放
 - ✅ **Google API Fallback** - 本地未找到时自动回退到 Google
 - ✅ **Redis 缓存** - 自动缓存远程查询结果，支持命中统计
 - ✅ **统一响应格式** - 中英双解，词形变化，词频信息
@@ -75,7 +76,15 @@ const config: Config = {
     deen_mac: { enabled: false, dbPath: './data/deen_mac.sqlite' },
     ruen_mac: { enabled: false, dbPath: './data/ruen_mac.sqlite' },
   },
+  localDictLifecycle: {
+    idleReleaseMs: 600000, // 默认 10 分钟，测试可设 10000 (10s)
+  },
 };
+```
+
+也支持环境变量覆盖（常用于临时验证）：
+```bash
+LOCAL_DICT_IDLE_RELEASE_MS=10000 npm start
 ```
 
 ### 5. 启动服务
@@ -193,7 +202,8 @@ curl http://localhost:3000/api/v2/entries/de/über
 
 查询策略:
 - `language=en`：先查 ECDICT；若启用并命中 `oxford_en_mac`，仅覆盖 `definitions`；若本地都未命中，fallback 到 Google。
-- `language=ko/ja/de/ru`：先查对应本地双向词典；未命中再 fallback 到 Google。
+- `language=ko/ja/de/ru`：首次请求按需加载对应本地双向词典；未命中再 fallback 到 Google。
+- 非 `en` 本地词典空闲超过 `idleReleaseMs` 会自动释放，下次请求会重新加载。
 - Redis 缓存保留最终 Google fallback 结果。
 
 ## 生产部署
@@ -247,6 +257,7 @@ freeDictionaryAPI/
 │   │   └── cache.ts           # 缓存服务
 │   ├── providers/             # 词典提供者 (可扩展)
 │   │   ├── base.ts            # Provider 接口 + Registry
+│   │   ├── lazy-local-dicts.ts # 非 EN 词典按需加载/释放管理
 │   │   ├── ecdict/            # ECDICT 英汉词典
 │   │   │   ├── index.ts       # Provider 实现
 │   │   │   ├── database.ts    # SQLite 操作
@@ -263,6 +274,9 @@ freeDictionaryAPI/
 ├── data/
 │   └── ecdict.db              # SQLite 数据库
 ├── modules/                   # 原版 Google API 模块 (legacy)
+├── tests/
+│   └── testcase/
+│       └── lazy-local-dicts.test.mjs
 ├── tsconfig.json
 └── package.json
 ```
