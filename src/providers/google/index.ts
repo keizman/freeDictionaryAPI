@@ -5,6 +5,8 @@
 
 import { DictionaryProvider } from '../base';
 import { DictionaryResponse, QueryOptions, QueryResult, createEmptyResponse } from '../../core/types';
+import config from '../../config';
+const fetch = require('node-fetch');
 
 // Import legacy dictionary module
 const legacyDictionary = require('../../../modules/dictionary');
@@ -14,10 +16,23 @@ const legacyDictionary = require('../../../modules/dictionary');
  */
 export class GoogleProvider implements DictionaryProvider {
     readonly name = 'google';
-    readonly displayName = 'Google Dictionary';
+    readonly displayName = 'DictionaryAPI.dev (fallback)';
     readonly supportedLanguages = ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko', 'ru', 'pt-BR', 'ar', 'tr'];
 
     private available: boolean = true;
+    private readonly dictionaryApiBaseUrl: string;
+    private readonly disableGoogleSearch: boolean;
+
+    constructor() {
+        this.dictionaryApiBaseUrl =
+            (
+                process.env.DICTIONARY_API_BASE_URL ||
+                (config as any)?.fallback?.dictionary_api_base_url ||
+                'https://api.dictionaryapi.dev/api/v2'
+            ).replace(/\/+$/, '');
+
+        this.disableGoogleSearch = this.resolveDisableGoogleSearch();
+    }
 
     /**
      * Check if provider is available
@@ -32,26 +47,30 @@ export class GoogleProvider implements DictionaryProvider {
     async query(word: string, options?: QueryOptions): Promise<QueryResult> {
         const language = options?.language || 'en';
 
-        console.log(`[GOOGLE] Querying word="${word}" lang="${language}"`);
+        console.log(
+            `[GOOGLE] Querying dictionaryapi.dev word="${word}" lang="${language}" disable_google_search=${String(
+                this.disableGoogleSearch
+            )}`
+        );
 
         try {
-            const googleResult = await legacyDictionary.findDefinitions(word, language, { include: [] });
-
-            if (!googleResult || googleResult.length === 0) {
-                console.log(`[GOOGLE] word="${word}" not found`);
-                return {
-                    found: false,
-                    response: null,
-                };
+            const primaryResult = await this.queryDictionaryApiDev(word, language);
+            if (primaryResult.found) {
+                return primaryResult;
             }
 
-            const response = this.transformGoogleResponse(googleResult, word);
-            console.log(`[GOOGLE] word="${word}" found=true definitions=${response.definitions.length}`);
+            // Keep legacy Google scraping logic as optional backup path.
+            if (!this.disableGoogleSearch) {
+                console.log(`[GOOGLE] fallback to legacy google scraping word="${word}" lang="${language}"`);
+                const legacyResult = await this.queryLegacyGoogle(word, language);
+                if (legacyResult.found) {
+                    return legacyResult;
+                }
+                return legacyResult;
+            }
 
-            return {
-                found: true,
-                response,
-            };
+            console.log(`[GOOGLE] legacy google scraping disabled by disable_google_search`);
+            return primaryResult;
         } catch (err: any) {
             console.error(`[GOOGLE] Error querying word="${word}":`, err.message);
             return {
@@ -60,6 +79,114 @@ export class GoogleProvider implements DictionaryProvider {
                 error: err.message,
             };
         }
+    }
+
+    private async queryDictionaryApiDev(word: string, language: string): Promise<QueryResult> {
+        const languageCandidates = this.buildLanguageCandidates(language);
+        let lastError = '';
+
+        for (const lang of languageCandidates) {
+            const url = `${this.dictionaryApiBaseUrl}/entries/${encodeURIComponent(lang)}/${encodeURIComponent(word)}`;
+            try {
+                const res = await fetch(url, { method: 'GET' });
+                console.log(`[GOOGLE] dictionaryapi.dev status=${res.status} lang="${lang}" word="${word}"`);
+
+                if (res.status === 404) {
+                    continue;
+                }
+
+                if (res.status !== 200) {
+                    const bodyText = await res.text();
+                    lastError = `dictionaryapi.dev status ${res.status} body=${bodyText.slice(0, 200)}`;
+                    continue;
+                }
+
+                const data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    continue;
+                }
+
+                const response = this.transformGoogleResponse(data, word);
+                console.log(`[GOOGLE] dictionaryapi.dev word="${word}" found=true definitions=${response.definitions.length}`);
+                return {
+                    found: true,
+                    response,
+                };
+            } catch (err: any) {
+                lastError = err?.message || String(err);
+                console.error(`[GOOGLE] dictionaryapi.dev error word="${word}" lang="${lang}":`, lastError);
+            }
+        }
+
+        return {
+            found: false,
+            response: null,
+            error: lastError || `dictionaryapi.dev no definitions for "${word}"`,
+        };
+    }
+
+    private async queryLegacyGoogle(word: string, language: string): Promise<QueryResult> {
+        try {
+            const googleResult = await legacyDictionary.findDefinitions(word, language, { include: [] });
+
+            if (!googleResult || googleResult.length === 0) {
+                console.log(`[GOOGLE] legacy word="${word}" not found`);
+                return {
+                    found: false,
+                    response: null,
+                };
+            }
+
+            const response = this.transformGoogleResponse(googleResult, word);
+            console.log(`[GOOGLE] legacy word="${word}" found=true definitions=${response.definitions.length}`);
+
+            return {
+                found: true,
+                response,
+            };
+        } catch (err: any) {
+            console.error(`[GOOGLE] legacy error querying word="${word}":`, err.message);
+            return {
+                found: false,
+                response: null,
+                error: err.message,
+            };
+        }
+    }
+
+    private buildLanguageCandidates(language: string): string[] {
+        const candidates: string[] = [];
+        const normalized = String(language || '').trim();
+        if (!normalized) return ['en'];
+
+        candidates.push(normalized);
+
+        // Some calls use region variants like pt-BR.
+        if (normalized.includes('-')) {
+            candidates.push(normalized.split('-')[0]);
+        }
+
+        // Keep API compatibility with old code paths using en_US / en_GB.
+        if (normalized === 'en_US' || normalized === 'en_GB') {
+            candidates.push('en');
+        }
+
+        return Array.from(new Set(candidates));
+    }
+
+    private resolveDisableGoogleSearch(): boolean {
+        const envValue = process.env.DISABLE_GOOGLE_SEARCH;
+        if (envValue !== undefined) {
+            return ['1', 'true', 'yes', 'on'].includes(envValue.toLowerCase());
+        }
+
+        const configValue = (config as any)?.fallback?.disable_google_search;
+        if (typeof configValue === 'boolean') {
+            return configValue;
+        }
+
+        // Safe default: disable fragile scraping path unless explicitly enabled.
+        return true;
     }
 
     /**

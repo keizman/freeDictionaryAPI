@@ -8,6 +8,7 @@ import { getCached, setCached } from '../core/cache';
 import { registry } from '../providers';
 import { DictionaryProvider } from '../providers/base';
 import { lazyLocalDictManager } from '../providers/lazy-local-dicts';
+import config from '../config';
 
 const router = Router();
 
@@ -15,6 +16,19 @@ type ProviderHit = {
     provider: DictionaryProvider;
     response: DictionaryResponse;
 };
+
+function isEnabledFlag(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value !== 'string') return false;
+    return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function isLocalDictDisabled(): boolean {
+    if (isEnabledFlag(process.env.DISABLE_LOCAL_DICTS)) {
+        return true;
+    }
+    return isEnabledFlag((config as any)?.fallback?.disable_local_dicts);
+}
 
 async function queryProvider(name: string, word: string, language: string): Promise<ProviderHit | null> {
     const provider = registry.get(name);
@@ -95,6 +109,26 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
             const elapsed = Date.now() - startTime;
             console.log(`[RESPONSE] word="${word}" source=cache elapsed=${elapsed}ms`);
             return res.json(response);
+        }
+
+        const disableLocalDicts = isLocalDictDisabled();
+        if (disableLocalDicts) {
+            console.log(`[LOOKUP] local dictionaries disabled, force fallback provider="google"`);
+            const googleHit = await queryProvider('google', word, language);
+            if (googleHit) {
+                await setCached(word, language, googleHit.response, googleHit.response.source);
+                const elapsed = Date.now() - startTime;
+                console.log(`[RESPONSE] word="${word}" source=${googleHit.response.source} elapsed=${elapsed}ms`);
+                return res.json(googleHit.response);
+            }
+
+            const elapsed = Date.now() - startTime;
+            console.log(`[RESPONSE] word="${word}" NOT FOUND elapsed=${elapsed}ms`);
+            return res.status(404).json({
+                title: 'No Definitions Found',
+                message: `Sorry, we couldn't find definitions for the word "${word}".`,
+                resolution: 'Try checking the spelling or searching for a different word.',
+            });
         }
 
         if (language === 'en') {

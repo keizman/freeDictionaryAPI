@@ -9,6 +9,7 @@
 - ✅ **多语双向词典** - 可选 `ko/ja/de/ru <-> en` 本地词库
 - ✅ **非 EN 词典懒加载** - 首次请求时热加载，空闲后自动释放
 - ✅ **Google API Fallback** - 本地未找到时自动回退到 Google
+- ✅ **DictionaryAPI.dev Fallback** - 本地未找到时回退到 `https://dictionaryapi.dev/`
 - ✅ **Redis 缓存** - 自动缓存远程查询结果，支持命中统计
 - ✅ **统一响应格式** - 中英双解，词形变化，词频信息
 - ✅ **完整日志** - 所有操作可追溯
@@ -79,12 +80,19 @@ const config: Config = {
   localDictLifecycle: {
     idleReleaseMs: 600000, // 默认 10 分钟，测试可设 10000 (10s)
   },
+  fallback: {
+    disable_google_search: true, // 禁用旧 Google 抓取逻辑（保留代码）
+    dictionary_api_base_url: 'https://api.dictionaryapi.dev/api/v2',
+    disable_local_dicts: false,  // 调试开关：true 时强制走 fallback
+  },
 };
 ```
 
 也支持环境变量覆盖（常用于临时验证）：
 ```bash
 LOCAL_DICT_IDLE_RELEASE_MS=10000 npm start
+DISABLE_GOOGLE_SEARCH=1 npm start
+DISABLE_LOCAL_DICTS=1 npm start
 ```
 
 ### 5. 启动服务
@@ -186,7 +194,7 @@ curl http://localhost:3000/api/v2/entries/de/über
 | `jaen_mac` | 日英双向本地词典 |
 | `deen_mac` | 德英双向本地词典 |
 | `ruen_mac` | 俄英双向本地词典 |
-| `google` | 来自 Google API (fallback) |
+| `google` | 来自 DictionaryAPI.dev fallback（可选启用旧 Google 抓取） |
 | `cache` | 来自 Redis 缓存 |
 
 ## 当前词库与语向
@@ -205,6 +213,7 @@ curl http://localhost:3000/api/v2/entries/de/über
 - `language=ko/ja/de/ru`：首次请求按需加载对应本地双向词典；未命中再 fallback 到 Google。
 - 非 `en` 本地词典空闲超过 `idleReleaseMs` 会自动释放，下次请求会重新加载。
 - Redis 缓存保留最终 Google fallback 结果。
+ - fallback provider 默认优先使用 `dictionaryapi.dev`；旧 Google 抓取逻辑仅在 `disable_google_search=false` 时启用。
 
 ## 生产部署
 
