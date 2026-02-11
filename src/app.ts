@@ -20,6 +20,21 @@ import dictionaryRoutes from './routes/dictionary';
 
 const app = express();
 
+// Required when running behind reverse proxies (Nginx/Cloudflare/LB)
+// so rate-limit can read client IP from X-Forwarded-For safely.
+const trustProxy = config.server.trustProxy ?? 1;
+app.set('trust proxy', trustProxy);
+
+// Request-level access log for easier production debugging.
+app.use((req: Request, res: Response, next: NextFunction) => {
+    const started = Date.now();
+    res.on('finish', () => {
+        const elapsed = Date.now() - started;
+        console.log(`[HTTP] ${req.method} ${req.originalUrl} status=${res.statusCode} ip=${req.ip} elapsed=${elapsed}ms`);
+    });
+    next();
+});
+
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
@@ -87,6 +102,7 @@ async function start(): Promise<void> {
 
     // Initialize providers
     console.log('[STARTUP] Initializing providers...');
+    console.log(`[STARTUP] Express trust proxy: ${String(trustProxy)}`);
 
     // 1. ECDICT Provider (priority: 100 - highest)
     try {

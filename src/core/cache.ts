@@ -63,6 +63,10 @@ export async function getCached<T>(word: string, language: string): Promise<{ da
         console.log(`[CACHE MISS] word="${word}" lang="${language}" (Redis not connected)`);
         return null;
     }
+    if (redis.status !== 'ready') {
+        console.log(`[CACHE MISS] word="${word}" lang="${language}" (Redis status=${redis.status})`);
+        return null;
+    }
 
     const key = makeCacheKey(word, language);
 
@@ -129,6 +133,10 @@ export async function setCached<T>(
         console.log(`[CACHE SKIP] word="${word}" lang="${language}" (Redis not connected)`);
         return false;
     }
+    if (redis.status !== 'ready') {
+        console.log(`[CACHE SKIP] word="${word}" lang="${language}" (Redis status=${redis.status})`);
+        return false;
+    }
 
     const key = makeCacheKey(word, language);
 
@@ -160,6 +168,9 @@ export async function deleteCached(word: string, language: string): Promise<bool
     if (!redis) {
         return false;
     }
+    if (redis.status !== 'ready') {
+        return false;
+    }
 
     const key = makeCacheKey(word, language);
 
@@ -179,6 +190,9 @@ export async function deleteCached(word: string, language: string): Promise<bool
 export async function getCacheInfo(word: string, language: string): Promise<CacheEntry<unknown> | null> {
     const redis = getRedis();
     if (!redis) {
+        return null;
+    }
+    if (redis.status !== 'ready') {
         return null;
     }
 

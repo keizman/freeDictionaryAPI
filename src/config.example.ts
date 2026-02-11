@@ -13,6 +13,7 @@ export interface Config {
     };
     server: {
         port: number;
+        trustProxy?: boolean | number;
     };
     localDicts?: {
         oxford_en_mac?: {
@@ -52,6 +53,8 @@ const config: Config = {
     },
     server: {
         port: 9000,
+        // Set to 1 when app is behind one reverse proxy (recommended for Nginx/LB)
+        trustProxy: 1,
     },
     localDicts: {
         // EN -> EN definitions (used to enrich ECDICT "en" response)

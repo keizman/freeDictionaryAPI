@@ -91,6 +91,9 @@ export async function getCacheTTLDays(): Promise<number> {
     if (!redisClient || !redisConfig) {
         return 30; // Default
     }
+    if (redisClient.status !== 'ready') {
+        return redisConfig.defaultTTLDays || 30;
+    }
 
     try {
         const ttlStr = await redisClient.get('tl_config:cache_ttl_days');

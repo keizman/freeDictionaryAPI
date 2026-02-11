@@ -17,11 +17,55 @@ type ProviderHit = {
 
 async function queryProvider(name: string, word: string, language: string): Promise<ProviderHit | null> {
     const provider = registry.get(name);
-    if (!provider || !provider.isAvailable()) return null;
-    if (!provider.supportedLanguages.includes(language)) return null;
+    if (!provider) {
+        console.log(`[LOOKUP] skip provider="${name}" reason=not_registered`);
+        return null;
+    }
 
-    const result = await provider.query(word, { language });
-    if (!result.found || !provider.isValidResult(result.response)) return null;
+    if (!provider.isAvailable()) {
+        console.log(`[LOOKUP] skip provider="${name}" reason=unavailable`);
+        return null;
+    }
+
+    if (!provider.supportedLanguages.includes(language)) {
+        console.log(
+            `[LOOKUP] skip provider="${name}" reason=unsupported_language supported=[${provider.supportedLanguages.join(',')}]`
+        );
+        return null;
+    }
+
+    console.log(`[LOOKUP] try provider="${name}" word="${word}" lang="${language}"`);
+
+    let result;
+    try {
+        result = await provider.query(word, { language });
+    } catch (err: any) {
+        console.error(
+            `[LOOKUP] error provider="${name}" word="${word}" lang="${language}":`,
+            err?.message || err
+        );
+        return null;
+    }
+
+    if (!result.found || !result.response) {
+        if (result.error) {
+            console.log(`[LOOKUP] miss provider="${name}" error="${result.error}"`);
+        } else {
+            console.log(`[LOOKUP] miss provider="${name}"`);
+        }
+        return null;
+    }
+
+    if (!provider.isValidResult(result.response)) {
+        console.log(
+            `[LOOKUP] invalid provider="${name}" definitions=${result.response.definitions.length} translations=${result.response.translations.length}`
+        );
+        return null;
+    }
+
+    console.log(
+        `[LOOKUP] hit provider="${name}" definitions=${result.response.definitions.length} translations=${result.response.translations.length}`
+    );
 
     return {
         provider,
@@ -66,6 +110,7 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
                 if (oxfordHit?.response?.definitions?.length) {
                     response.definitions = oxfordHit.response.definitions;
                     response.source = 'ecdict+oxford';
+                    console.log('[LOOKUP] merge definitions provider="oxford_en_mac" into provider="ecdict"');
                 }
 
                 const elapsed = Date.now() - startTime;
@@ -79,6 +124,7 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
                 return res.json(oxfordHit.response);
             }
 
+            console.log(`[LOOKUP] local providers missed word="${word}" lang="en", fallback provider="google"`);
             const googleHit = await queryProvider('google', word, language);
             if (googleHit) {
                 await setCached(word, language, googleHit.response, googleHit.response.source);
@@ -86,28 +132,32 @@ router.get('/:version/entries/:language/:word', async (req: Request, res: Respon
                 console.log(`[RESPONSE] word="${word}" source=${googleHit.response.source} elapsed=${elapsed}ms`);
                 return res.json(googleHit.response);
             }
+
+            console.log(`[LOOKUP] fallback provider="google" miss word="${word}" lang="en"`);
         } else {
-            for (const provider of providers) {
-                // Check if provider supports this language
-                if (!provider.supportedLanguages.includes(language)) {
-                    continue;
-                }
+            const localProviders = providers.filter(
+                p => p.name !== 'google' && p.supportedLanguages.includes(language)
+            );
 
-                const result = await provider.query(word, { language });
-
-                if (result.found && provider.isValidResult(result.response)) {
-                    const response = result.response!;
-
-                    // Keep Redis caching as final Google fallback cache.
-                    if (response.source === 'google') {
-                        await setCached(word, language, response, response.source);
-                    }
-
+            for (const provider of localProviders) {
+                const hit = await queryProvider(provider.name, word, language);
+                if (hit) {
                     const elapsed = Date.now() - startTime;
-                    console.log(`[RESPONSE] word="${word}" source=${response.source} elapsed=${elapsed}ms`);
-                    return res.json(response);
+                    console.log(`[RESPONSE] word="${word}" source=${hit.response.source} elapsed=${elapsed}ms`);
+                    return res.json(hit.response);
                 }
             }
+
+            console.log(`[LOOKUP] local providers missed word="${word}" lang="${language}", fallback provider="google"`);
+            const googleHit = await queryProvider('google', word, language);
+            if (googleHit) {
+                await setCached(word, language, googleHit.response, googleHit.response.source);
+                const elapsed = Date.now() - startTime;
+                console.log(`[RESPONSE] word="${word}" source=${googleHit.response.source} elapsed=${elapsed}ms`);
+                return res.json(googleHit.response);
+            }
+
+            console.log(`[LOOKUP] fallback provider="google" miss word="${word}" lang="${language}"`);
         }
 
         // 3. Not found anywhere

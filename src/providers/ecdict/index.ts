@@ -78,8 +78,9 @@ export class ECDictProvider implements DictionaryProvider {
      */
     isValidResult(response: DictionaryResponse | null): boolean {
         if (!response) return false;
-        if (response.translations.length === 0) return false;
-        return true;
+        // Some entries may have EN definitions but empty CN translations.
+        // Treat either side as a valid hit so EN lookup can still return data.
+        return response.translations.length > 0 || response.definitions.length > 0;
     }
 
     /**
