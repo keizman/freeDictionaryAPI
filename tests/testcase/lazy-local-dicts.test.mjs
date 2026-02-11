@@ -76,6 +76,12 @@ async function main() {
     assert.ok(startupProviders.has('oxford_en_mac'), 'oxford_en_mac should be registered at startup');
     assert.ok(!startupProviders.has('jaen_mac'), 'jaen_mac should not be registered at startup');
 
+    // Case 1.1: EN definitions should remain plain text (no raw HTML payload).
+    const enNot = await request('/api/v2/entries/en/not');
+    assert.equal(enNot.status, 200, 'EN lookup should succeed');
+    assert.ok(Array.isArray(enNot.body.definitions) && enNot.body.definitions.length > 0, 'EN definitions should exist');
+    assert.ok(!/<[^>]+>/.test(enNot.body.definitions[0].definition || ''), 'EN definition must be plain text, not HTML');
+
     // Case 2: JP dictionary loads on first request and is reused on second request.
     const jaFirst = await request('/api/v2/entries/ja/hello');
     assert.equal(jaFirst.status, 200, 'first JP lookup should succeed');
