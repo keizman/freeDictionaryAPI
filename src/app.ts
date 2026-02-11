@@ -9,6 +9,8 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
+import path from 'path';
 import config from './config';
 import { initRedis, closeRedis } from './core/redis';
 import { registry, createECDictProvider, createGoogleProvider, createSqliteDictProvider } from './providers';
@@ -19,6 +21,12 @@ import dictionaryRoutes from './routes/dictionary';
 // ============================================================================
 
 const app = express();
+const projectRoot = path.resolve(__dirname, '..');
+
+function resolveDbPath(dbPath: string): string {
+    if (!dbPath) return dbPath;
+    return path.isAbsolute(dbPath) ? dbPath : path.resolve(projectRoot, dbPath);
+}
 
 // Required when running behind reverse proxies (Nginx/Cloudflare/LB)
 // so rate-limit can read client IP from X-Forwarded-For safely.
@@ -106,7 +114,9 @@ async function start(): Promise<void> {
 
     // 1. ECDICT Provider (priority: 100 - highest)
     try {
-        const ecdictProvider = createECDictProvider(config.ecdict.dbPath);
+        const ecdictPath = resolveDbPath(config.ecdict.dbPath);
+        console.log(`[STARTUP] ECDICT path: ${ecdictPath} exists=${fs.existsSync(ecdictPath)}`);
+        const ecdictProvider = createECDictProvider(ecdictPath);
         registry.register(ecdictProvider, 100);
     } catch (err) {
         console.error('[STARTUP] Failed to load ECDICT:', err);
@@ -127,11 +137,13 @@ async function start(): Promise<void> {
         }
 
         try {
+            const dbPath = resolveDbPath(localDict.dbPath);
+            console.log(`[STARTUP] ${name} path: ${dbPath} exists=${fs.existsSync(dbPath)}`);
             const provider = createSqliteDictProvider({
                 name,
                 displayName,
                 supportedLanguages,
-                dbPath: localDict.dbPath,
+                dbPath,
             });
             registry.register(provider, priority);
         } catch (err) {
