@@ -70,7 +70,17 @@ export interface Frequency {
 /**
  * Data source identifier
  */
-export type DataSource = 'ecdict' | 'google' | 'cache' | 'unknown';
+export type DataSource =
+    | 'ecdict'
+    | 'google'
+    | 'cache'
+    | 'unknown'
+    | 'ecdict+oxford'
+    | 'oxford_en_mac'
+    | 'koen_mac'
+    | 'jaen_mac'
+    | 'deen_mac'
+    | 'ruen_mac';
 
 /**
  * Complete unified dictionary response

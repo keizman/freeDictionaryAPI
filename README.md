@@ -1,10 +1,12 @@
 # Enhanced Dictionary API
 
-基于 ECDICT 本地词典的增强版词典 API，支持 340万+ 英汉词条，Redis 缓存，统一响应格式。
+基于 ECDICT 本地词典的增强版词典 API，支持 340万+ 英汉词条、可选本地 SQLite 词典增强、Redis 缓存，统一响应格式。
 
 ## 功能特性
 
 - ✅ **ECDICT 本地词典** - 340万词条，无需网络即可查询
+- ✅ **Oxford EN-EN 增强** - `en` 查询可用 `oxford_en_mac` 覆盖英英 definitions
+- ✅ **多语双向词典** - 可选 `ko/ja/de/ru <-> en` 本地词库
 - ✅ **Google API Fallback** - 本地未找到时自动回退到 Google
 - ✅ **Redis 缓存** - 自动缓存远程查询结果，支持命中统计
 - ✅ **统一响应格式** - 中英双解，词形变化，词频信息
@@ -66,6 +68,13 @@ const config: Config = {
   server: {
     port: 3000,
   },
+  localDicts: {
+    oxford_en_mac: { enabled: false, dbPath: './data/oxford_en_mac.sqlite' },
+    koen_mac: { enabled: false, dbPath: './data/koen_mac.sqlite' },
+    jaen_mac: { enabled: false, dbPath: './data/jaen_mac.sqlite' },
+    deen_mac: { enabled: false, dbPath: './data/deen_mac.sqlite' },
+    ruen_mac: { enabled: false, dbPath: './data/ruen_mac.sqlite' },
+  },
 };
 ```
 
@@ -106,6 +115,13 @@ GET /api/v2/entries/en/{word}
 示例:
 ```bash
 curl http://localhost:3000/api/v2/entries/en/hello
+```
+
+多语词典示例:
+```bash
+curl http://localhost:3000/api/v2/entries/ko/안녕
+curl http://localhost:3000/api/v2/entries/ko/hello
+curl http://localhost:3000/api/v2/entries/de/über
 ```
 
 ### 响应格式
@@ -155,8 +171,30 @@ curl http://localhost:3000/api/v2/entries/en/hello
 | 值 | 含义 |
 |---|------|
 | `ecdict` | 来自本地 ECDICT 词典 |
+| `ecdict+oxford` | `en` 查询：中译/词形来自 ECDICT，英英 definitions 来自 Oxford |
+| `oxford_en_mac` | 仅命中 Oxford 本地词典 |
+| `koen_mac` | 韩英双向本地词典 |
+| `jaen_mac` | 日英双向本地词典 |
+| `deen_mac` | 德英双向本地词典 |
+| `ruen_mac` | 俄英双向本地词典 |
 | `google` | 来自 Google API (fallback) |
 | `cache` | 来自 Redis 缓存 |
+
+## 当前词库与语向
+
+| 词库文件 | 语向 |
+|---|---|
+| `ecdict.db` | `En -> Cn` |
+| `oxford_en_mac.sqlite` | `En -> En` |
+| `koen_mac.sqlite` | `Ko <-> En` |
+| `jaen_mac.sqlite` | `Ja <-> En` |
+| `deen_mac.sqlite` | `De <-> En` |
+| `ruen_mac.sqlite` | `Ru <-> En` |
+
+查询策略:
+- `language=en`：先查 ECDICT；若启用并命中 `oxford_en_mac`，仅覆盖 `definitions`；若本地都未命中，fallback 到 Google。
+- `language=ko/ja/de/ru`：先查对应本地双向词典；未命中再 fallback 到 Google。
+- Redis 缓存保留最终 Google fallback 结果。
 
 ## 生产部署
 
@@ -213,6 +251,9 @@ freeDictionaryAPI/
 │   │   │   ├── index.ts       # Provider 实现
 │   │   │   ├── database.ts    # SQLite 操作
 │   │   │   └── parser.ts      # 字段解析
+│   │   ├── sqlite-dicts/      # 本地 SQLite 词典 (Oxford/KoEn/JaEn/DeEn/RuEn)
+│   │   │   ├── index.ts       # Provider 实现
+│   │   │   └── database.ts    # SQLite 操作
 │   │   └── google/            # Google 词典 (fallback)
 │   │       └── index.ts
 │   └── routes/                # API 路由

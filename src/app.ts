@@ -11,7 +11,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import config from './config';
 import { initRedis, closeRedis } from './core/redis';
-import { registry, createECDictProvider, createGoogleProvider } from './providers';
+import { registry, createECDictProvider, createGoogleProvider, createSqliteDictProvider } from './providers';
 import dictionaryRoutes from './routes/dictionary';
 
 // ============================================================================
@@ -96,7 +96,43 @@ async function start(): Promise<void> {
         console.error('[STARTUP] Failed to load ECDICT:', err);
     }
 
-    // 2. Google Provider (priority: 50 - fallback)
+    // 2. Optional local SQLite dictionary providers
+    type LocalDictName = 'oxford_en_mac' | 'koen_mac' | 'jaen_mac' | 'deen_mac' | 'ruen_mac';
+    const registerLocalDict = (
+        name: LocalDictName,
+        displayName: string,
+        supportedLanguages: string[],
+        priority: number
+    ) => {
+        const localDict = config.localDicts?.[name];
+        if (!localDict?.enabled) {
+            console.log(`[STARTUP] Skip ${name}: disabled`);
+            return;
+        }
+
+        try {
+            const provider = createSqliteDictProvider({
+                name,
+                displayName,
+                supportedLanguages,
+                dbPath: localDict.dbPath,
+            });
+            registry.register(provider, priority);
+        } catch (err) {
+            console.error(`[STARTUP] Failed to load ${name}:`, err);
+        }
+    };
+
+    // EN -> EN enrichment dictionary
+    registerLocalDict('oxford_en_mac', 'Oxford EN-EN Dictionary', ['en'], 95);
+
+    // Bi-directional language pair dictionaries
+    registerLocalDict('koen_mac', 'Korean-English Dictionary', ['ko'], 90);
+    registerLocalDict('jaen_mac', 'Japanese-English Dictionary', ['ja'], 90);
+    registerLocalDict('deen_mac', 'German-English Dictionary', ['de'], 90);
+    registerLocalDict('ruen_mac', 'Russian-English Dictionary', ['ru'], 90);
+
+    // 3. Google Provider (priority: 50 - fallback)
     const googleProvider = createGoogleProvider();
     registry.register(googleProvider, 50);
 

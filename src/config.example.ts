@@ -14,6 +14,28 @@ export interface Config {
     server: {
         port: number;
     };
+    localDicts?: {
+        oxford_en_mac?: {
+            enabled: boolean;
+            dbPath: string;
+        };
+        koen_mac?: {
+            enabled: boolean;
+            dbPath: string;
+        };
+        jaen_mac?: {
+            enabled: boolean;
+            dbPath: string;
+        };
+        deen_mac?: {
+            enabled: boolean;
+            dbPath: string;
+        };
+        ruen_mac?: {
+            enabled: boolean;
+            dbPath: string;
+        };
+    };
 }
 
 const config: Config = {
@@ -30,6 +52,30 @@ const config: Config = {
     },
     server: {
         port: 9000,
+    },
+    localDicts: {
+        // EN -> EN definitions (used to enrich ECDICT "en" response)
+        oxford_en_mac: {
+            enabled: false,
+            dbPath: './data/oxford_en_mac.sqlite',
+        },
+        // Bi-directional pair dictionaries (query via corresponding language code)
+        koen_mac: {
+            enabled: false,
+            dbPath: './data/koen_mac.sqlite',
+        },
+        jaen_mac: {
+            enabled: false,
+            dbPath: './data/jaen_mac.sqlite',
+        },
+        deen_mac: {
+            enabled: false,
+            dbPath: './data/deen_mac.sqlite',
+        },
+        ruen_mac: {
+            enabled: false,
+            dbPath: './data/ruen_mac.sqlite',
+        },
     },
 };
 
