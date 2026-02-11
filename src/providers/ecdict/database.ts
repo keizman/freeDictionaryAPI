@@ -66,6 +66,7 @@ export class ECDictDatabase {
             return true;
         } catch (err) {
             console.error(`[ECDICT] Failed to open database: ${err}`);
+            console.log(`[ECDICT] Failed to open database: ${err}`);
             return false;
         }
     }

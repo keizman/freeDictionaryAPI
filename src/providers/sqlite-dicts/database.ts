@@ -30,6 +30,7 @@ export class SqliteDictionaryDatabase {
             return true;
         } catch (err) {
             console.error(`[SQLITE-DICT] Failed to open database: ${err}`);
+            console.log(`[SQLITE-DICT] Failed to open database: ${err}`);
             return false;
         }
     }
@@ -71,4 +72,3 @@ export class SqliteDictionaryDatabase {
         console.log('[SQLITE-DICT] Database closed');
     }
 }
-

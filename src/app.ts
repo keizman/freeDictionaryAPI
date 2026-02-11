@@ -111,6 +111,8 @@ async function start(): Promise<void> {
     // Initialize providers
     console.log('[STARTUP] Initializing providers...');
     console.log(`[STARTUP] Express trust proxy: ${String(trustProxy)}`);
+    console.log(`[STARTUP] cwd: ${process.cwd()}`);
+    console.log(`[STARTUP] projectRoot: ${projectRoot}`);
 
     // 1. ECDICT Provider (priority: 100 - highest)
     try {
@@ -118,6 +120,9 @@ async function start(): Promise<void> {
         console.log(`[STARTUP] ECDICT path: ${ecdictPath} exists=${fs.existsSync(ecdictPath)}`);
         const ecdictProvider = createECDictProvider(ecdictPath);
         registry.register(ecdictProvider, 100);
+        if (!ecdictProvider.isAvailable()) {
+            console.log('[STARTUP] WARN ecdict registered but unavailable (check path/permissions/file)');
+        }
     } catch (err) {
         console.error('[STARTUP] Failed to load ECDICT:', err);
     }
@@ -146,6 +151,9 @@ async function start(): Promise<void> {
                 dbPath,
             });
             registry.register(provider, priority);
+            if (!provider.isAvailable()) {
+                console.log(`[STARTUP] WARN ${name} registered but unavailable (check path/permissions/file)`);
+            }
         } catch (err) {
             console.error(`[STARTUP] Failed to load ${name}:`, err);
         }
